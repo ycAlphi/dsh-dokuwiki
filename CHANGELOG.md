@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0 — 2026-11-10
+
+### Added
+
+- `wiki_recent_changes`: the wiki's most recent changes (page edits and media
+  uploads) with date, page id, user and edit summary, read from the DokuWiki
+  Recent changes page through the logged-in session (works in both access
+  modes). Optional `limit` (default 20, max 50) and `namespace` prefix filter.
+  This replaces the earlier practice of scripting a separate wiki login just to
+  see what changed lately.
+
 ## 0.3.1 — 2026-11-10
 
 ### Fixed

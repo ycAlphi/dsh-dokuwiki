@@ -36,6 +36,8 @@
 - **可选的"按 wiki 定制写作规范"** —— wiki 可以把"新页面放哪、怎么命名、套哪个模板、
   必须有什么结构、摘要怎么写"写成普通 wiki 页面；在插件配置页填该页面 id 后，
   模型写入前会先用 `wiki_get_conventions` 读取并遵守。默认关闭。
+- **最近改动** —— `wiki_recent_changes` 通过已登录会话读取 wiki 自己的 changelog（页面编辑
+  与媒体上传，含日期/页面/用户/摘要），可按命名空间过滤，用来快速了解"最近改了什么"。
 - **零运行时依赖** —— 纯 Node.js（内置 `fetch` + 小型 XML-RPC 编解码），无构建步骤、
   无原生模块、无 Python 依赖。
 
@@ -46,8 +48,10 @@
 | `wiki_status` | 连接、访问模式、登录状态，以及已探测到的账号权限 |
 | `wiki_read_page` | 读取单个页面的 DokuWiki 源码（带短期缓存） |
 | `wiki_get_conventions` | 读取本 wiki 自己的页面写作规范页（配置后才有） |
+| `wiki_download_media` | 把 wiki 上的一个媒体文件下载到工作区（返回本地路径） |
 | `wiki_list_pages` | 列出命名空间下的页面（`depth` 控制递归） |
 | `wiki_search` | 全文搜索（XML-RPC，或网页搜索页兜底） |
+| `wiki_recent_changes` | recent changes 里的最近页面/媒体改动（`limit`、命名空间过滤） |
 | `wiki_page_history` | 历史版本列表（需要 XML-RPC 权限） |
 | `wiki_can_edit` | 探测单个页面的编辑权限，探测后释放编辑锁 |
 | `wiki_permissions` | 按命名空间探测读/创建/编辑/删除/上传权限 |

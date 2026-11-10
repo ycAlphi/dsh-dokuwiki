@@ -162,6 +162,7 @@ test('plugin manifest and registrations', () => {
       'wiki_page_history',
       'wiki_permissions',
       'wiki_read_page',
+      'wiki_recent_changes',
       'wiki_search',
       'wiki_status',
     ],
@@ -457,6 +458,23 @@ test('tools work end-to-end against a mock wiki', async () => {
 
     const search = await setup.tools.get('wiki_search').execute({ query: 'Start' }, {})
     assert.ok(search.results.some((hit) => hit.id === 'start'))
+
+    // Recent changes: parsed from the wiki's changelog page, newest first.
+    const recent = await setup.tools.get('wiki_recent_changes').execute({}, {})
+    assert.equal(recent.via, 'recent')
+    assert.equal(recent.count, 3)
+    assert.deepEqual(
+      recent.items.map((entry) => entry.pageid),
+      ['start', 'notes:2026-07:2026-07-02', 'wiki:plot.png'],
+    )
+    assert.equal(recent.items[2].type, 'mediafile')
+    const recentLimited = await setup.tools.get('wiki_recent_changes').execute({ limit: 1 }, {})
+    assert.equal(recentLimited.count, 1)
+    const recentNamespace = await setup.tools
+      .get('wiki_recent_changes')
+      .execute({ namespace: 'notes' }, {})
+    assert.equal(recentNamespace.count, 1)
+    assert.equal(recentNamespace.items[0].pageid, 'notes:2026-07:2026-07-02')
 
     const probe = await setup.tools.get('wiki_can_edit').execute({ pageid: 'user:writer:x' }, {})
     assert.equal(probe.canEdit, true)

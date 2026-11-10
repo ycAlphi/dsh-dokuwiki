@@ -49,6 +49,9 @@ the plugin config.
   structure, summary style) in a normal wiki page. Set that page id on the
   plugin configuration page and the model reads it with
   `wiki_get_conventions` before writing. Off by default.
+- **Recent changes** — `wiki_recent_changes` reads the wiki's own changelog
+  (page edits and media uploads, with date/page/user/summary) through the
+  logged-in session, optionally filtered by namespace.
 - **Zero runtime dependencies** — plain Node.js (`fetch` + a small XML-RPC
   codec). No build step, no native modules.
 
@@ -62,6 +65,7 @@ the plugin config.
 | `wiki_download_media` | Download one media file into the workspace (returns the local path) |
 | `wiki_list_pages` | List pages in a namespace (`depth` controls recursion) |
 | `wiki_search` | Full-text search (XML-RPC, or the wiki search page as fallback) |
+| `wiki_recent_changes` | Recent page/media changes from the changelog page (`limit`, namespace filter) |
 | `wiki_page_history` | Revision list (requires XML-RPC access) |
 | `wiki_can_edit` | Probe edit permission for one page; releases the edit lock |
 | `wiki_permissions` | Probe read/create/edit/delete/upload permission for one namespace |

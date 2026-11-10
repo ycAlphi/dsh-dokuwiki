@@ -116,6 +116,23 @@ test('web fallback: account outside remoteuser logs in and reads', async () => {
     assert.equal(search.via, 'html')
     assert.ok(search.results.some((hit) => hit.id === 'start'))
 
+    // Recent changes are read from the rendered changelog page and parsed into
+    // structured entries (page edits and media changes).
+    const recent = await client.recentChanges({ limit: 2 })
+    assert.equal(recent.via, 'recent')
+    assert.equal(recent.items.length, 2)
+    assert.deepEqual(recent.items[0], {
+      date: '2026/11/10 14:15',
+      pageid: 'start',
+      user: 'alice',
+      summary: '[演示]',
+      type: 'page',
+    })
+    const allRecent = await client.recentChanges({ limit: 50 })
+    assert.equal(allRecent.items.length, 3)
+    assert.equal(allRecent.items[2].type, 'mediafile')
+    assert.equal(allRecent.items[2].pageid, 'wiki:plot.png')
+
     await assert.rejects(() => client.pageVersions('start'), (error) => {
       assert.equal(error.code, 'UNSUPPORTED')
       return true

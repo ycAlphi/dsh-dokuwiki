@@ -121,6 +121,32 @@ function searchResults(pages, query) {
   return htmlPage(`<ul class="search_result">${items}</ul>`)
 }
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+}
+
+/** Render the DokuWiki "Recent changes" changelog list (one `<li>` per change). */
+function renderRecentChanges(recent) {
+  const items = recent
+    .map((entry) => {
+      const media = entry.type === 'mediafile'
+      const href = media
+        ? `/doku.php?id=start&amp;tab_details=view&amp;do=media&amp;image=${encodeURIComponent(entry.pageid)}`
+        : `/doku.php?id=${encodeURIComponent(entry.pageid)}`
+      const diff = media
+        ? '<img src="/lib/images/blank.gif" width="15" height="11" alt="" />'
+        : `<a href="/doku.php?id=${encodeURIComponent(entry.pageid)}&amp;do=diff" class="diff_link"><img src="/lib/images/diff.png" width="15" height="11" alt="diff" /></a>`
+      const summary = entry.summary ? ` — ${escapeHtml(entry.summary)}` : ''
+      return `<li class=""><div class="li"><img class="icon" src="/lib/images/fileicons/file.png" alt="${escapeHtml(entry.pageid)}" /> <span class="date">${escapeHtml(entry.date)}</span> ${diff} <a href="${href}" class="wikilink1">${escapeHtml(entry.pageid)}</a> <span class="sum">${summary}</span> <span class="user"><bdi>${escapeHtml(entry.user)}</bdi></span></div></li>`
+    })
+    .join('')
+  return htmlPage(`<form id="dw__recent"><ul class="fix-media-list-overlap">${items}</ul></form>`)
+}
+
 function parseCookies(header) {
   const cookies = {}
   for (const part of String(header ?? '').split(';')) {
@@ -215,6 +241,13 @@ export async function startMockWiki(options = {}) {
     canEdit: options.canEdit ?? (() => true),
     canUpload: options.canUpload ?? (() => true),
     silentSaveFailure: options.silentSaveFailure ?? false,
+    recent: [
+      ...(options.recent ?? [
+        { date: '2026/11/10 14:15', pageid: 'start', user: 'alice', summary: '[演示]', type: 'page' },
+        { date: '2026/11/09 17:29', pageid: 'notes:2026-07:2026-07-02', user: 'alice', summary: '更新日志', type: 'page' },
+        { date: '2026/11/09 17:29', pageid: 'wiki:plot.png', user: 'alice', summary: '创建', type: 'mediafile' },
+      ]),
+    ],
     /** session token -> { username, sectok } */
     sessions: new Map(),
     /** media id -> Buffer */
@@ -315,6 +348,11 @@ export async function startMockWiki(options = {}) {
         if (action === 'search') {
           response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
           response.end(searchResults(state.pages, url.searchParams.get('q') ?? ''))
+          return
+        }
+        if (action === 'recent') {
+          response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+          response.end(renderRecentChanges(state.recent))
           return
         }
         if (action === 'edit') {
