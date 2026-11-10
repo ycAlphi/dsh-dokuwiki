@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.1 — 2026-11-10
+
+### Fixed
+
+- `wiki_get_conventions` returned an undeclared `via` field, which DSH rejects at
+  the tool-output schema boundary (`additionalProperties: false`), so the tool
+  failed even when the conventions page was readable. The field is gone and a
+  regression test now asserts that every returned field is declared.
+- Capability detection no longer gives up when the DSH credentials service mounts
+  after this plugin on a cold start: the credential-service lookup is optional,
+  and a startup-race failure is retried up to three times so the write tools are
+  still registered without a manual refresh.
+
 ## 0.3.0 — 2026-11-10
 
 ### Added

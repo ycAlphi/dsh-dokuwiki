@@ -307,6 +307,15 @@ test('writing conventions page is opt-in and served when configured', async () =
     assert.equal(conventions.exists, true)
     assert.equal(conventions.pageid, 'wiki:conventions')
     assert.match(conventions.source, /新页面放 notes 命名空间下/)
+    // DSH validates tool output against the declared schema with
+    // additionalProperties: false, so every returned field must be declared.
+    const declared = setup.tools.get('wiki_get_conventions').output.schema.properties
+    for (const key of Object.keys(conventions)) {
+      assert.ok(
+        Object.prototype.hasOwnProperty.call(declared, key),
+        `wiki_get_conventions returned undeclared field "${key}"`,
+      )
+    }
 
     // A configured page that cannot be read reports the gap, but does not throw.
     await setup.configure({ conventionsPage: 'wiki:missing' })
