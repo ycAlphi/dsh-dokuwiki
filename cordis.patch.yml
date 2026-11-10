@@ -1,0 +1,8 @@
+# dsh-dokuwiki — DSH bundle patch
+#
+# Declares the plugin row. The `name` must be exactly the installed package
+# name, otherwise the plugin loads but its Plugins-page configuration never
+# appears.
+- insert:
+    - id: dsh-dokuwiki
+      name: dsh-dokuwiki

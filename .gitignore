@@ -1,0 +1,15 @@
+# Dependencies
+node_modules/
+
+# Local test artifacts
+test/.tmp/
+test/local/*.json
+*.local.json
+*.tgz
+
+# Logs
+*.log
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
