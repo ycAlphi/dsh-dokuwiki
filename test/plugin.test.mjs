@@ -209,6 +209,7 @@ test('plugin manifest and registrations', () => {
       'wiki_can_edit',
       'wiki_download_media',
       'wiki_get_conventions',
+      'wiki_list_media',
       'wiki_list_pages',
       'wiki_page_history',
       'wiki_permissions',
@@ -462,6 +463,16 @@ test('tools work end-to-end: download media into the workspace', async () => {
     assert.equal(result.path, 'wiki_media/plot.png')
     assert.equal(result.bytes, png.length)
     assert.deepEqual(fs.readFileSync(path.join(cwd, 'wiki_media', 'plot.png')), png)
+    // Media discovery: the media manager is listable through the logged-in
+    // session, which is the gap behind "find the photos of X" tasks.
+    wiki.state.media.set('log2025:2025-03:2dmot光路.png', png)
+    const mediaList = await setup.tools.get('wiki_list_media').execute({ namespace: 'log2025:2025-03' }, {})
+    assertOutput('wiki_list_media', setup.tools.get('wiki_list_media'), mediaList)
+    assert.deepEqual(
+      mediaList.files.map((file) => file.id),
+      ['log2025:2025-03:2dmot光路.png'],
+    )
+    assert.deepEqual(mediaList.subNamespaces, [])
     // A destination that escapes the workspace is rejected.
     await assert.rejects(
       () =>

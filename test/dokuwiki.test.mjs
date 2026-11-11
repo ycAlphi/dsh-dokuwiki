@@ -140,6 +140,33 @@ test('web fallback: account outside remoteuser logs in and reads', async () => {
   })
 })
 
+test('web search: titles and snippets come from the Kaos result containers only', async () => {
+  await withWiki({}, async (wiki) => {
+    const client = new DokuWikiClient({ baseUrls: [wiki.url], username: 'writer', password: 'writerpass' })
+    const search = await client.search('log body')
+    assert.equal(search.via, 'html')
+    // The mock search page also links `start` and `sidebar:junk` from its
+    // sidebar; scraping every ?id= link would leak those ids into the results.
+    assert.deepEqual(
+      search.results.map((hit) => hit.id),
+      ['user:alice:log'],
+    )
+    assert.equal(search.results[0].title, 'user:alice:log')
+    assert.match(search.results[0].snippet, /log body/)
+  })
+})
+
+test('web search: older templates fall back to plain page-id extraction', async () => {
+  await withWiki({ searchRender: 'legacy' }, async (wiki) => {
+    const client = new DokuWikiClient({ baseUrls: [wiki.url], username: 'writer', password: 'writerpass' })
+    const search = await client.search('Start')
+    assert.equal(search.via, 'html')
+    assert.ok(search.results.some((hit) => hit.id === 'start'))
+    assert.equal(search.results[0].title, '')
+    assert.equal(search.results[0].snippet, '')
+  })
+})
+
 test('recent changes: page entries without a diff link are still pages', async () => {
   await withWiki(
     {
@@ -321,6 +348,34 @@ test('media: download through fetch.php', async () => {
       (error) => error.code === 'ARGUMENT',
     )
   })
+})
+
+test('media: list files and direct sub-namespaces through the media manager', async () => {
+  await withWiki(
+    {
+      media: {
+        'root.png': Buffer.from('r'),
+        'log2025:2025-03:2dmot光路.png': Buffer.from('a'),
+        'log2025:2025-03:other.jpg': Buffer.from('b'),
+        'log2025:2025-04:next.png': Buffer.from('c'),
+      },
+    },
+    async (wiki) => {
+      const client = new DokuWikiClient({ baseUrls: [wiki.url], username: 'writer', password: 'writerpass' })
+      const listing = await client.listMedia('log2025:2025-03')
+      assert.equal(listing.namespace, 'log2025:2025-03')
+      assert.deepEqual(listing.files, ['log2025:2025-03:2dmot光路.png', 'log2025:2025-03:other.jpg'])
+      assert.deepEqual(listing.subNamespaces, [])
+
+      const root = await client.listMedia('')
+      assert.deepEqual(root.files, ['root.png'])
+      assert.deepEqual(root.subNamespaces, ['log2025'])
+
+      const month = await client.listMedia('log2025')
+      assert.deepEqual(month.files, [])
+      assert.deepEqual(month.subNamespaces, ['log2025:2025-03', 'log2025:2025-04'])
+    },
+  )
 })
 
 test('upload: namespace upload probe, upload and byte-for-byte verification', async () => {

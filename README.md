@@ -34,9 +34,11 @@ the plugin config.
   DokuWiki; `wiki_write_page` rejects empty bodies so that only
   `wiki_delete_page` can delete, and deletion requires a summary and is verified
   by reading the page back.
-- **Media read and write** — `wiki_download_media` fetches a media file into the
-  workspace; uploads go through the media manager endpoint and are verified by
-  downloading the stored file byte-for-byte.
+- **Media discovery, read and write** — `wiki_list_media` browses a media
+  namespace through the logged-in session (the media manager itself requires a
+  login), `wiki_download_media` fetches one file into the workspace, and uploads
+  go through the media manager endpoint and are verified by downloading the
+  stored file byte-for-byte.
 - **No accidental lockout** — a failed login is never retried automatically;
   DokuWiki locks the account after repeated failures and that lock also blocks
   XML-RPC.
@@ -63,8 +65,9 @@ the plugin config.
 | `wiki_read_page` | Raw DokuWiki source of one page (short-lived cache) |
 | `wiki_get_conventions` | The wiki's own page-writing conventions page, when configured |
 | `wiki_download_media` | Download one media file into the workspace (returns the local path) |
+| `wiki_list_media` | List media files directly inside one media namespace (media discovery; the media manager needs a login) |
 | `wiki_list_pages` | List pages in a namespace (`depth` controls recursion) |
-| `wiki_search` | Full-text search (XML-RPC, or the wiki search page as fallback) |
+| `wiki_search` | Full-text search (XML-RPC, or the wiki search page as fallback); returns page titles and snippets |
 | `wiki_recent_changes` | Recent page/media changes from the changelog page (`limit`, namespace filter) |
 | `wiki_page_history` | Revision list (requires XML-RPC access) |
 | `wiki_can_edit` | Probe edit permission for one page; releases the edit lock |
@@ -169,12 +172,14 @@ The probe is refreshed when the configuration or password changes, when
 
 ## Media
 
-`wiki_download_media` fetches one media file (image etc.) through
-`fetch.php` using the logged-in wiki session and writes it into the workspace
-(default `wiki_media/<basename>`); the wiki ACL decides which media the account
-may read. `wiki_upload_media` reads a file from the workspace, uploads it through
-the media manager endpoint, and verifies it by downloading the stored file and
-comparing the bytes. Notes:
+DokuWiki only exposes media listings to a logged-in session — anonymous requests
+to the media manager are refused — so `wiki_list_media` lists one namespace
+through the plugin's session (files plus direct sub-namespaces; walk them
+yourself for a tree). `wiki_download_media` fetches one media file (image etc.)
+through `fetch.php` using the same session and writes it into the workspace
+(default `wiki_media/<basename>`). `wiki_upload_media` reads a file from the
+workspace, uploads it through the media manager endpoint, and verifies it by
+downloading the stored file and comparing the bytes. Notes:
 
 - Downloads are capped at 20 MiB; `dest_path` must stay inside the workspace.
 - The upload namespace defaults to `user:<username>`; pass `namespace` to use

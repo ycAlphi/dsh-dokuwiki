@@ -38,6 +38,9 @@
   模型写入前会先用 `wiki_get_conventions` 读取并遵守。默认关闭。
 - **最近改动** —— `wiki_recent_changes` 通过已登录会话读取 wiki 自己的 changelog（页面编辑
   与媒体上传，含日期/页面/用户/摘要），可按命名空间过滤，用来快速了解"最近改了什么"。
+- **媒体发现、读取与上传** —— `wiki_list_media` 通过已登录会话浏览媒体命名空间（媒体管理器
+  本身要求登录，匿名 HTTP 拿不到目录），`wiki_download_media` 把单个文件下载到工作区，
+  上传走媒体管理器接口并下载回读逐字节校验。
 - **零运行时依赖** —— 纯 Node.js（内置 `fetch` + 小型 XML-RPC 编解码），无构建步骤、
   无原生模块、无 Python 依赖。
 
@@ -49,8 +52,9 @@
 | `wiki_read_page` | 读取单个页面的 DokuWiki 源码（带短期缓存） |
 | `wiki_get_conventions` | 读取本 wiki 自己的页面写作规范页（配置后才有） |
 | `wiki_download_media` | 把 wiki 上的一个媒体文件下载到工作区（返回本地路径） |
+| `wiki_list_media` | 列出某个媒体命名空间下的文件（媒体管理器需要登录，所以这是发现媒体的入口） |
 | `wiki_list_pages` | 列出命名空间下的页面（`depth` 控制递归） |
-| `wiki_search` | 全文搜索（XML-RPC，或网页搜索页兜底） |
+| `wiki_search` | 全文搜索（XML-RPC，或网页搜索页兜底）；返回页面标题与摘要 |
 | `wiki_recent_changes` | recent changes 里的最近页面/媒体改动（`limit`、命名空间过滤） |
 | `wiki_page_history` | 历史版本列表（需要 XML-RPC 权限） |
 | `wiki_can_edit` | 探测单个页面的编辑权限，探测后释放编辑锁 |
@@ -137,11 +141,14 @@ DokuWiki 没有把 ACL 暴露成可读的 API，所以插件用**网络探测**�
 
 探测结果会在以下时机刷新：配置或密码变更、调用 `wiki_status`、以及最多每 60 秒一次。
 
-## 媒体上传
+## 媒体发现、下载与上传
 
-`wiki_upload_media` 从工作区读取文件，通过媒体管理器接口上传，然后下载回读并逐字节比对。
-注意：
+`wiki_list_media` 列出某个媒体命名空间下的文件与直接子命名空间——媒体管理器本身要求登录，
+匿名 HTTP 拿不到目录，所以这是模型发现媒体的入口（不递归，需要树就逐层调用）。
+`wiki_download_media` 通过 `fetch.php` 下载单个媒体文件。`wiki_upload_media` 从工作区读取
+文件，通过媒体管理器接口上传，然后下载回读并逐字节比对。注意：
 
+- 下载默认落在 `wiki_media/<basename>`，`dest_path` 必须位于工作区内。
 - 目标命名空间默认 `user:<用户名>`，可用 `namespace` 指定别的；账号必须在目标命名空间有
   上传权限。
 - 允许的文件类型由 wiki 决定（`conf/mime.conf` 和上传配置）。扩展名被拒绝时如实报错，

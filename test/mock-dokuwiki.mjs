@@ -112,13 +112,59 @@ function renderIndex(pages, namespace) {
   return htmlPage(`<ul class="idx">${items.join('')}</ul>`)
 }
 
-function searchResults(pages, query) {
+function renderLegacySearch(pages, query) {
   const needle = query.toLowerCase()
   const hits = Object.entries(pages).filter(([, text]) => text.toLowerCase().includes(needle))
   const items = hits
     .map(([pageid]) => `<li><a href="/doku.php?id=${encodeURIComponent(pageid)}" class="wikilink1">${pageid}</a></li>`)
     .join('')
   return htmlPage(`<ul class="search_result">${items}</ul>`)
+}
+
+/**
+ * Render a Kaos (2024-02-06b) search page: quick hits for page-name matches and
+ * a fulltext result list whose first 15 hits carry `<dd class="snippet">`.
+ * Sidebar links deliberately point at other pages so tests can verify that the
+ * parser only reads the result containers.
+ */
+function renderKaosSearch(pages, query) {
+  const needle = query.trim().toLowerCase()
+  if (needle === '') return htmlPage('<div class="nothing">Nothing was found</div>')
+  const entries = Object.entries(pages)
+  const quick = entries.filter(([id]) => id.toLowerCase().includes(needle))
+  const full = entries.filter(
+    ([id, text]) => !id.toLowerCase().includes(needle) && text.toLowerCase().includes(needle),
+  )
+  const quickHtml =
+    quick.length === 0
+      ? ''
+      : `<div class="search_quickresult"><h2>Quick hits:</h2><ul class="search_quickhits">${quick
+          .map(
+            ([id]) =>
+              `<li><a href="/doku.php?id=${encodeURIComponent(id)}" class="wikilink1">${escapeHtml(id)}</a></li>`,
+          )
+          .join('')}</ul><div class="clearer"></div></div>`
+  const fullHtml =
+    full.length === 0
+      ? '<div class="nothing">Nothing was found</div>'
+      : `<div class="search_fulltextresult"><h2>Search results:</h2><dl class="search_results">${full
+          .map(([id, text], index) => {
+            const lower = text.toLowerCase()
+            const at = lower.indexOf(needle)
+            const start = Math.max(0, at - 40)
+            const end = Math.min(text.length, at + needle.length + 40)
+            const snippetText = escapeHtml(text.slice(start, end))
+            const snippet =
+              index < 15
+                ? `<dd class="snippet">${start > 0 ? '… ' : ''}${snippetText
+                    .split(escapeHtml(needle))
+                    .join(`<strong class="search_hit">${escapeHtml(needle)}</strong>`)}${end < text.length ? ' …' : ''}</dd>`
+                : ''
+            return `<div class="search_fullpage_result"><dt><a href="/doku.php?id=${encodeURIComponent(id)}" class="wikilink1">${escapeHtml(id)}</a></dt><dd class="meta">1 hits</dd>${snippet}</div>`
+          })
+          .join('')}</dl></div>`
+  const chrome = '<div class="sidebar"><a href="/doku.php?id=start">start</a><a href="/doku.php?id=sidebar:junk">junk</a></div>'
+  return htmlPage(`${chrome}${quickHtml}${fullHtml}`)
 }
 
 function escapeHtml(value) {
@@ -231,6 +277,8 @@ function parseMultipart(buffer, boundary) {
  *   remoteuser?: string[],
  *   canEdit?: (pageid: string, username: string) => boolean,
  *   canUpload?: (namespace: string, username: string) => boolean,
+ *   media?: Record<string, Buffer|string>,
+ *   searchRender?: 'kaos'|'legacy',
  *   silentSaveFailure?: boolean,
  *   loginLockoutAfter?: number,
  * }} [options]
@@ -253,7 +301,13 @@ export async function startMockWiki(options = {}) {
     /** session token -> { username, sectok } */
     sessions: new Map(),
     /** media id -> Buffer */
-    media: new Map(),
+    media: new Map(
+      Object.entries(options.media ?? {}).map(([id, value]) => [
+        id,
+        Buffer.isBuffer(value) ? value : Buffer.from(String(value)),
+      ]),
+    ),
+    searchRender: options.searchRender ?? 'kaos',
     loginAttempts: 0,
     loginFailures: 0,
     xmlrpcCalls: [],
@@ -269,12 +323,38 @@ export async function startMockWiki(options = {}) {
     const token = cookies.DWKSESS ?? ''
     return state.sessions.get(token) ?? null
   }
-  const mediaManagerPage = (allowed) =>
-    htmlPage(
-      allowed
-        ? '<div id="mediamanager__uploader"><form id="dw__upload" enctype="multipart/form-data"><input type="file" name="upload" /></form></div>'
-        : '<div class="nothing">media_perm_upload</div>',
-    )
+  const mediaManagerPage = (allowed, namespace = '', media = new Map()) => {
+    const ns = String(namespace ?? '').replace(/:+$/, '')
+    const prefix = ns === '' ? '' : `${ns}:`
+    const files = []
+    const childNamespaces = new Set()
+    for (const id of media.keys()) {
+      if (!id.startsWith(prefix)) continue
+      const rest = id.slice(prefix.length)
+      if (rest === '') continue
+      const colon = rest.indexOf(':')
+      if (colon === -1) files.push(id)
+      else childNamespaces.add(`${prefix}${rest.slice(0, colon)}`)
+    }
+    const tree = [...childNamespaces]
+      .map(
+        (child) =>
+          `<li class="media level1 open"><a href="/lib/exe/mediamanager.php?ns=${encodeURIComponent(child)}" class="idx_dir">${escapeHtml(child.split(':').pop())}</a></li>`,
+      )
+      .join('')
+    const rows = files
+      .map(
+        (id) =>
+          `<div title="${escapeHtml(id)}"><a id="h_:${escapeHtml(id)}" class="select mediafile mf_file">${escapeHtml(id.split(':').pop())}</a> <span class="info">(1 KB)</span><div class="example" id="ex_${escapeHtml(id.replaceAll(':', '_'))}">mediausage <code>{{:${escapeHtml(id)}}}</code></div></div>`,
+      )
+      .join('')
+    const uploader = allowed
+      ? '<div id="mediamanager__uploader"><form id="dw__upload" enctype="multipart/form-data"><input type="file" name="upload" /></form></div>'
+      : '<div class="nothing">media_perm_upload</div>'
+    return htmlPage(`
+      <nav id="mediamgr__aside"><div class="pad"><h1>Media Files</h1><div id="media__opts"></div><ul class="idx">${tree}</ul></div></nav>
+      <main id="mediamgr__content"><div class="pad"><h1 id="media__ns">:${escapeHtml(ns)}</h1>${uploader}<div class="files">${rows}</div></div></main>`)
+  }
 
   const server = http.createServer(async (request, response) => {
     const url = new URL(request.url ?? '/', 'http://127.0.0.1')
@@ -348,8 +428,13 @@ export async function startMockWiki(options = {}) {
           return
         }
         if (action === 'search') {
+          const query = url.searchParams.get('q') ?? ''
           response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-          response.end(searchResults(state.pages, url.searchParams.get('q') ?? ''))
+          response.end(
+            state.searchRender === 'legacy'
+              ? renderLegacySearch(state.pages, query)
+              : renderKaosSearch(state.pages, query),
+          )
           return
         }
         if (action === 'recent') {
@@ -447,10 +532,10 @@ export async function startMockWiki(options = {}) {
           response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(mediaManagerPage(false))
           return
         }
-        const namespace = url.searchParams.get('ns') ?? ''
+        const namespace = (url.searchParams.get('ns') ?? '').replace(/:+$/, '')
         const allowed = state.canUpload(namespace, session.username) === true
         response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-        response.end(mediaManagerPage(allowed))
+        response.end(mediaManagerPage(allowed, namespace, state.media))
         return
       }
 

@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.0 — 2026-11-11
+
+### Added
+
+- `wiki_list_media`: list the files directly inside one media namespace (plus
+  its direct sub-namespaces) through the logged-in session. DokuWiki refuses
+  anonymous media-manager requests and shows a login form instead, so listing
+  media used to require reading page after page just to find image references.
+
+### Fixed
+
+- `wiki_search` (web mode) now returns page titles and snippets. DokuWiki's
+  search page already contains a title link plus a snippet for the first 15
+  fulltext hits, but the HTML parser only extracted page ids and lost both — and
+  it also picked up sidebar/navigation links as if they were results. Parsing is
+  now scoped to the `search_quickhits` / `search_results` containers; other
+  DokuWiki/template versions keep the previous id-only fallback.
+
 ## 0.4.2 — 2026-11-11
 
 ### Fixed
