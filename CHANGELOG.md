@@ -12,6 +12,11 @@
   output schema (field types, required fields, `additionalProperties: false`), so
   a nullable field declared as `string` fails in tests instead of inside DSH.
 
+### Changed
+
+- The maintainer-only `docs/publish.md` is no longer shipped in the npm package;
+  it stays in the GitHub repository and the README links to it there.
+
 ## 0.4.0 — 2026-11-10
 
 ### Added

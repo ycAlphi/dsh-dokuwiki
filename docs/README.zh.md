@@ -216,7 +216,8 @@ npm run test:local -- --stick <便携版根目录>   # 可选，仅 Windows 便�
   runbook（备份、替换程序文件、保留 `conf/` 与 `data/`、验证、回滚），命令可直接复制。
   插件**刻意不提供**升级功能：升级是服务器运维操作，需要 shell 权限、维护窗口和备份方案，
   应该由 wiki 管理员执行，而不是由客户端插件修改服务器。
-- [插件发布指南](publish.md) —— GitHub + npm 发布流程（维护者手册）。
+- [插件发布指南](https://github.com/ycAlphi/dsh-dokuwiki/blob/main/docs/publish.md)
+  —— GitHub + npm 发布流程（维护者手册，只在仓库里，不随 npm 包发布）。
 
 ## 许可证
 

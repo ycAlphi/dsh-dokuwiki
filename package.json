@@ -15,7 +15,8 @@
   },
   "files": [
     "lib",
-    "docs",
+    "docs/README.zh.md",
+    "docs/upgrade-dokuwiki.md",
     "cordis.patch.yml",
     "README.md",
     "CHANGELOG.md",

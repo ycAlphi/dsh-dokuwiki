@@ -273,8 +273,9 @@ There is **no need for a local DokuWiki** to test this plugin:
   The plugin deliberately does **not** upgrade the wiki server itself: that is a
   server-side operation which belongs to the wiki administrator, not to a client
   plugin (and it needs shell access, a maintenance window and a backup plan).
-- [Publishing this plugin](docs/publish.md) — maintainer guide for the
-  GitHub + npm release flow (Chinese).
+- [Publishing this plugin](https://github.com/ycAlphi/dsh-dokuwiki/blob/main/docs/publish.md)
+  — maintainer guide for the GitHub + npm release flow (Chinese). It lives in
+  the repository only and is not shipped in the npm package.
 
 ## License
 
