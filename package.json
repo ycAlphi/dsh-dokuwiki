@@ -1,6 +1,6 @@
 {
   "name": "dsh-dokuwiki",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "DokuWiki integration for DeepSeek Harness: read, search, write, delete wiki pages and upload media through native tools, with ACL-aware tool exposure, an optional per-wiki writing-conventions page, and credentials managed by DSH.",
   "type": "module",
   "main": "lib/index.js",

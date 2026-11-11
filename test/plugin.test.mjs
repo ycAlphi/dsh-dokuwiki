@@ -72,6 +72,57 @@ function createMockContext() {
   return { ctx, tools, skills, routes, events, credentials }
 }
 
+const TYPE_CHECKERS = {
+  string: (value) => typeof value === 'string',
+  boolean: (value) => typeof value === 'boolean',
+  integer: (value) => Number.isInteger(value),
+  number: (value) => typeof value === 'number' && Number.isFinite(value),
+  object: (value) => value !== null && typeof value === 'object' && !Array.isArray(value),
+  array: (value) => Array.isArray(value),
+}
+
+/**
+ * DSH validates every tool's canonical output against its declared JSON schema:
+ * declared types are enforced (so a nullable field declared as `string` fails)
+ * and `additionalProperties: false` rejects fields that are not declared.
+ * This mirrors that contract in the offline suite so such bugs fail here.
+ */
+function assertSchemaMatches(toolName, schema, value, path) {
+  if (schema === null || typeof schema !== 'object') return
+  if (schema.type !== undefined) {
+    const checker = TYPE_CHECKERS[schema.type]
+    if (checker !== undefined) {
+      assert.ok(checker(value), `${toolName}: ${path} must be ${schema.type}, got ${JSON.stringify(value)}`)
+    }
+  }
+  if (schema.type === 'object' || schema.properties !== undefined) {
+    const properties = schema.properties ?? {}
+    const record = value !== null && typeof value === 'object' ? value : {}
+    for (const key of Object.keys(record)) {
+      if (schema.additionalProperties === false) {
+        assert.ok(
+          Object.prototype.hasOwnProperty.call(properties, key),
+          `${toolName}: ${path}.${key} is not declared (additionalProperties: false)`,
+        )
+      }
+    }
+    for (const [key, child] of Object.entries(properties)) {
+      if (!Object.prototype.hasOwnProperty.call(record, key)) continue
+      assertSchemaMatches(toolName, child, record[key], `${path}.${key}`)
+    }
+    for (const key of schema.required ?? []) {
+      assert.ok(Object.prototype.hasOwnProperty.call(record, key), `${toolName}: ${path}.${key} is required`)
+    }
+  }
+  if (schema.type === 'array' && schema.items !== undefined) {
+    value.forEach((item, index) => assertSchemaMatches(toolName, schema.items, item, `${path}[${index}]`))
+  }
+}
+
+function assertOutput(toolName, definition, value) {
+  assertSchemaMatches(toolName, definition.output.schema, value, '$')
+}
+
 function createResponse() {
   return {
     statusCode: 0,
@@ -227,6 +278,11 @@ test('unconfigured plugin returns an actionable CONFIG error', async () => {
     const result = await status.execute({}, {})
     assert.equal(result.ok, false)
     assert.match(result.error, /插件/)
+    // DSH validates the output strictly. Probe fields are declared as strings
+    // and are null until the probe has run, so they must be omitted, not null.
+    assertOutput('wiki_status', status, result)
+    assert.equal(Object.prototype.hasOwnProperty.call(result, 'probePage'), false)
+    assert.equal(Object.prototype.hasOwnProperty.call(result, 'uploadProbe'), false)
   } finally {
     setup.cleanup()
   }
@@ -298,6 +354,7 @@ test('writing conventions page is opt-in and served when configured', async () =
 
     // Opt-in: with nothing configured the tool reports the feature as off.
     const disabled = await setup.tools.get('wiki_get_conventions').execute({}, {})
+    assertOutput('wiki_get_conventions', setup.tools.get('wiki_get_conventions'), disabled)
     assert.equal(disabled.exists, false)
     assert.equal(disabled.disabled, true)
 
@@ -305,22 +362,15 @@ test('writing conventions page is opt-in and served when configured', async () =
     wiki.state.pages['wiki:conventions'] = '====== 写作规范 ======\n\n新页面放 notes 命名空间下。'
     await setup.configure({ conventionsPage: 'wiki:conventions' })
     const conventions = await setup.tools.get('wiki_get_conventions').execute({}, {})
+    assertOutput('wiki_get_conventions', setup.tools.get('wiki_get_conventions'), conventions)
     assert.equal(conventions.exists, true)
     assert.equal(conventions.pageid, 'wiki:conventions')
     assert.match(conventions.source, /新页面放 notes 命名空间下/)
-    // DSH validates tool output against the declared schema with
-    // additionalProperties: false, so every returned field must be declared.
-    const declared = setup.tools.get('wiki_get_conventions').output.schema.properties
-    for (const key of Object.keys(conventions)) {
-      assert.ok(
-        Object.prototype.hasOwnProperty.call(declared, key),
-        `wiki_get_conventions returned undeclared field "${key}"`,
-      )
-    }
 
     // A configured page that cannot be read reports the gap, but does not throw.
     await setup.configure({ conventionsPage: 'wiki:missing' })
     const missing = await setup.tools.get('wiki_get_conventions').execute({}, {})
+    assertOutput('wiki_get_conventions', setup.tools.get('wiki_get_conventions'), missing)
     assert.equal(missing.exists, false)
     assert.equal(missing.unreadable, true)
   } finally {
@@ -406,6 +456,7 @@ test('tools work end-to-end: download media into the workspace', async () => {
     const result = await setup.tools
       .get('wiki_download_media')
       .execute({ mediaid: 'wiki:plot.png' }, { agent: { session: { header: { cwd } } } })
+    assertOutput('wiki_download_media', setup.tools.get('wiki_download_media'), result)
     assert.equal(result.ok, true)
     assert.equal(result.mediaid, 'wiki:plot.png')
     assert.equal(result.path, 'wiki_media/plot.png')
@@ -439,6 +490,7 @@ test('tools work end-to-end against a mock wiki', async () => {
     assert.equal(setup.tools.has('wiki_delete_page'), true)
 
     const status = await setup.tools.get('wiki_status').execute({}, {})
+    assertOutput('wiki_status', setup.tools.get('wiki_status'), status)
     assert.equal(status.ok, true)
     assert.equal(status.mode, 'web')
     assert.equal(status.read, 'yes')
@@ -446,6 +498,7 @@ test('tools work end-to-end against a mock wiki', async () => {
     assert.equal(status.delete, 'yes')
 
     const read = await setup.tools.get('wiki_read_page').execute({ pageid: 'start' }, {})
+    assertOutput('wiki_read_page', setup.tools.get('wiki_read_page'), read)
     assert.equal(read.source, 'Start page')
     assert.equal(read.cached, false)
     const cached = await setup.tools.get('wiki_read_page').execute({ pageid: 'start' }, {})
@@ -454,13 +507,16 @@ test('tools work end-to-end against a mock wiki', async () => {
     assert.equal(fresh.cached, false)
 
     const listing = await setup.tools.get('wiki_list_pages').execute({ namespace: 'notes', depth: 1 }, {})
+    assertOutput('wiki_list_pages', setup.tools.get('wiki_list_pages'), listing)
     assert.deepEqual(listing.pages.map((page) => page.id), ['notes:2026-07:2026-07-02'])
 
     const search = await setup.tools.get('wiki_search').execute({ query: 'Start' }, {})
+    assertOutput('wiki_search', setup.tools.get('wiki_search'), search)
     assert.ok(search.results.some((hit) => hit.id === 'start'))
 
     // Recent changes: parsed from the wiki's changelog page, newest first.
     const recent = await setup.tools.get('wiki_recent_changes').execute({}, {})
+    assertOutput('wiki_recent_changes', setup.tools.get('wiki_recent_changes'), recent)
     assert.equal(recent.via, 'recent')
     assert.equal(recent.count, 3)
     assert.deepEqual(
@@ -477,17 +533,20 @@ test('tools work end-to-end against a mock wiki', async () => {
     assert.equal(recentNamespace.items[0].pageid, 'notes:2026-07:2026-07-02')
 
     const probe = await setup.tools.get('wiki_can_edit').execute({ pageid: 'user:writer:x' }, {})
+    assertOutput('wiki_can_edit', setup.tools.get('wiki_can_edit'), probe)
     assert.equal(probe.canEdit, true)
 
     const write = await setup.tools
       .get('wiki_write_page')
       .execute({ pageid: 'user:writer:entry', text: '=== 记录 ===\n\n内容', summary: '测试写入' }, {})
+    assertOutput('wiki_write_page', setup.tools.get('wiki_write_page'), write)
     assert.equal(write.saved, true)
     assert.equal(write.verified, true)
     assert.equal(wiki.state.pages['user:writer:entry'], '=== 记录 ===\n\n内容')
     assert.equal(wiki.state.saveCalls.at(-1).summary, '测试写入')
 
     const permissions = await setup.tools.get('wiki_permissions').execute({ namespace: 'user:writer' }, {})
+    assertOutput('wiki_permissions', setup.tools.get('wiki_permissions'), permissions)
     assert.equal(permissions.read, 'yes')
     assert.equal(permissions.create, 'yes')
     assert.equal(permissions.edit, 'yes')
@@ -505,6 +564,7 @@ test('tools work end-to-end against a mock wiki', async () => {
       const upload = await setup.tools
         .get('wiki_upload_media')
         .execute({ file_path: mediaFile, namespace: 'user:writer' }, {})
+      assertOutput('wiki_upload_media', setup.tools.get('wiki_upload_media'), upload)
       assert.equal(upload.ok, true)
       assert.equal(upload.mediaid, 'user:writer:' + path.basename(mediaFile))
       assert.equal(upload.bytes, png.length)
@@ -516,6 +576,7 @@ test('tools work end-to-end against a mock wiki', async () => {
     const deletion = await setup.tools
       .get('wiki_delete_page')
       .execute({ pageid: 'user:writer:entry', summary: '清理测试页' }, {})
+    assertOutput('wiki_delete_page', setup.tools.get('wiki_delete_page'), deletion)
     assert.equal(deletion.deleted, true)
     assert.equal(Object.prototype.hasOwnProperty.call(wiki.state.pages, 'user:writer:entry'), false)
     assert.equal(wiki.state.saveCalls.at(-1).wikitext, '')

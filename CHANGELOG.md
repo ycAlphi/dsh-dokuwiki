@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.1 — 2026-11-11
+
+### Fixed
+
+- `wiki_status` no longer returns `null` for `probePage` / `uploadProbe` before a
+  permission probe has produced a value. Both are declared as `string` in the
+  tool output schema, so on an unconfigured wiki (or when detection failed) DSH
+  rejected the result with "must be string". They are now omitted until known.
+- The offline suite now validates every covered tool output against its declared
+  output schema (field types, required fields, `additionalProperties: false`), so
+  a nullable field declared as `string` fails in tests instead of inside DSH.
+
 ## 0.4.0 — 2026-11-10
 
 ### Added
