@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.6.0 — 2026-11-11
+
+### Changed (behavior change)
+
+- **Session-scoped lazy tool disclosure is now the default.** Up front a session
+  only sees `wiki_status`. The rest of the wiki tools are registered for a
+  conversation when that conversation loads the `dokuwiki` skill, into that
+  Agent's own scope — other sessions never see them, and unloading the plugin or
+  disposing the Agent removes them again. Set `lazyTools: false` in the plugin
+  configuration to restore the previous always-on tool set; the switch takes
+  effect after DSH restarts (or the plugin is disabled and enabled again).
+- In lazy mode the skill is served by a skill provider, so the unlock happens
+  exactly when the skill body is loaded (model- or user-invoked).
+
+### Added
+
+- Resumed sessions whose previous request header already listed wiki tools are
+  re-unlocked automatically when the session is resumed.
+- The configuration page has a “按会话懒加载工具” switch, and the API reports and
+  accepts `lazyTools`.
+- `lib/lazy.mjs`: the disclosure state machine (idempotent, single-flight
+  unlock; per-Agent tool groups; ACL probe mirrored into unlocked sessions;
+  cleanup on Agent disposal and plugin unload).
+- Tests for the state machine (scope isolation, idempotency, late capability
+  results, disposal, resume detection) and for the lazy plugin mode end to end.
+
+### Notes
+
+- Registering tools mid-session uses DSH's tool-update support: the default
+  `deepseek-flash` route declares `toolUpdate: addition-only` and DSH sends the
+  `mid-conversation-tool-changes` beta for the added declarations.
+- The switch does not re-register tools at runtime; reload the plugin (restart
+  DSH or disable/enable it in the Plugin Manager) after changing it.
+
 ## 0.5.0 — 2026-11-11
 
 ### Added

@@ -28,12 +28,15 @@ function createCredentials() {
   }
 }
 
-function createMockContext() {
+function createMockContext(options = {}) {
   const tools = new Map()
   const skills = []
+  const providers = []
   const routes = []
   const events = {}
+  const effects = []
   const credentials = createCredentials()
+  const agents = options.agents ?? { list: () => [], currentInitiator: () => undefined }
   const ctx = {
     tools: {
       register(definition) {
@@ -44,7 +47,19 @@ function createMockContext() {
     skills: {
       register(definition) {
         skills.push(definition)
-        return () => {}
+        return () => {
+          const index = skills.indexOf(definition)
+          if (index >= 0) skills.splice(index, 1)
+        }
+      },
+      registerProvider(create) {
+        const control = { signal: new AbortController().signal, invalidate() {} }
+        const provider = create(control)
+        providers.push(provider)
+        return () => {
+          const index = providers.indexOf(provider)
+          if (index >= 0) providers.splice(index, 1)
+        }
       },
     },
     webServer: {
@@ -58,19 +73,109 @@ function createMockContext() {
     },
     effect(factory) {
       const disposer = factory()
+      if (typeof disposer === 'function') effects.push(disposer)
       return disposer
     },
     get(key) {
-      return key === 'credentials' ? credentials : undefined
+      if (key === 'credentials') return credentials
+      if (key === 'agents') return agents
+      return undefined
     },
     on(event, listener) {
-      events[event] = listener
-      return () => {}
+      ;(events[event] ??= []).push(listener)
+      return () => {
+        events[event] = (events[event] ?? []).filter((entry) => entry !== listener)
+      }
     },
     logger: { debug() {} },
   }
-  return { ctx, tools, skills, routes, events, credentials }
+  const emit = (event, payload) => {
+    for (const listener of [...(events[event] ?? [])]) listener(payload)
+  }
+  return { ctx, tools, skills, providers, routes, events, effects, emit, credentials, agents }
 }
+
+/** Write the plugin config file into a temporary DSH_HOME before `apply()`. */
+function writeStoredConfig(home, config) {
+  fs.writeFileSync(path.join(home, 'dokuwiki.config.json'), JSON.stringify(config))
+}
+
+/**
+ * Apply the plugin with a config already on disk. Used by tests that need the
+ * eager (non-lazy) tool set or a specific switch at apply time.
+ */
+function applyPluginWithConfig(config = {}) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-dokuwiki-apply-'))
+  const previousHome = process.env.DSH_HOME
+  process.env.DSH_HOME = home
+  writeStoredConfig(home, config)
+  const mock = createMockContext()
+  try {
+    plugin.apply(mock.ctx)
+  } catch (error) {
+    if (previousHome === undefined) delete process.env.DSH_HOME
+    else process.env.DSH_HOME = previousHome
+    fs.rmSync(home, { recursive: true, force: true })
+    throw error
+  }
+  return {
+    ...mock,
+    home,
+    cleanup() {
+      if (previousHome === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previousHome
+      fs.rmSync(home, { recursive: true, force: true })
+    },
+  }
+}
+
+/**
+ * A minimal Agent for the lazy-disclosure tests: a scoped tool registry plus
+ * the `effect()` cleanup the real `agent.ctx` provides.
+ */
+function createMockAgent(id, header) {
+  const tools = new Map()
+  const cleanups = []
+  const ctx = {
+    tools: {
+      register(definition) {
+        tools.set(definition.name, definition)
+        return () => tools.delete(definition.name)
+      },
+    },
+    effect(factory) {
+      const cleanup = factory()
+      if (typeof cleanup === 'function') cleanups.push(cleanup)
+      return () => {}
+    },
+  }
+  return {
+    id,
+    ctx,
+    tools,
+    session: { requestHeader: () => header },
+    dispose() {
+      for (const cleanup of cleanups.splice(0)) cleanup()
+    },
+  }
+}
+
+/** Names of the tools a lazily unlocked session should see (plus the global status tool). */
+const LAZY_SCOPED_TOOLS = [
+  'wiki_can_edit',
+  'wiki_delete_page',
+  'wiki_download_media',
+  'wiki_get_conventions',
+  'wiki_list_media',
+  'wiki_list_pages',
+  'wiki_page_history',
+  'wiki_permissions',
+  'wiki_read_page',
+  'wiki_recent_changes',
+  'wiki_search',
+  'wiki_upload_media',
+  'wiki_write_page',
+].sort()
 
 const TYPE_CHECKERS = {
   string: (value) => typeof value === 'string',
@@ -169,7 +274,10 @@ async function setupPlugin(options = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-dokuwiki-home-'))
   const previousHome = process.env.DSH_HOME
   process.env.DSH_HOME = home
-  const mock = createMockContext()
+  // Existing end-to-end tests exercise the eager (non-lazy) tool set; the lazy
+  // path has its own tests. A test can opt into lazy mode explicitly.
+  writeStoredConfig(home, { lazyTools: options.lazyTools ?? false, ...(options.config ?? {}) })
+  const mock = createMockContext(options.mock)
   plugin.apply(mock.ctx)
   const cleanup = () => {
     if (previousHome === undefined) delete process.env.DSH_HOME
@@ -198,37 +306,112 @@ async function setupPlugin(options = {}) {
   return { ...mock, home, cleanup, configure, setPassword, refreshCapabilities, options }
 }
 
-test('plugin manifest and registrations', () => {
+test('plugin manifest and default lazy registrations', () => {
   const mock = createMockContext()
   plugin.apply(mock.ctx)
   assert.equal(plugin.name, 'dsh-dokuwiki')
   assert.deepEqual(plugin.inject, ['tools', 'skills', 'webServer'])
-  assert.deepEqual(
-    [...mock.tools.keys()].sort(),
-    [
-      'wiki_can_edit',
-      'wiki_download_media',
-      'wiki_get_conventions',
-      'wiki_list_media',
-      'wiki_list_pages',
-      'wiki_page_history',
-      'wiki_permissions',
-      'wiki_read_page',
-      'wiki_recent_changes',
-      'wiki_search',
-      'wiki_status',
-    ],
-  )
-  assert.equal(mock.tools.has('wiki_write_page'), false, '写工具必须等 ACL 探测通过后才注册')
-  assert.equal(mock.tools.has('wiki_delete_page'), false)
-  assert.equal(mock.tools.has('wiki_upload_media'), false, '上传工具必须等上传权限探测通过后才注册')
-  assert.equal(mock.skills.length, 1)
-  assert.equal(mock.skills[0].name, 'dokuwiki')
-  assert.equal(mock.skills[0].invocation.modelInvocable, true)
-  assert.match(mock.skills[0].content, /wiki_write_page/)
+  // 0.6.0: lazy disclosure is the default — only the status tool is global.
+  assert.deepEqual([...mock.tools.keys()], ['wiki_status'])
+  assert.equal(mock.tools.has('wiki_write_page'), false)
+  assert.equal(mock.skills.length, 0)
+  assert.equal(mock.providers.length, 1)
+  assert.equal(mock.providers[0].name, 'dsh-dokuwiki')
   assert.equal(mock.routes.length, 1)
   assert.equal(mock.routes[0].kind, 'prefix')
   assert.equal(mock.routes[0].path, '/dsh-dokuwiki/api')
+})
+
+test('eager mode keeps the full tool set and the built-in skill', () => {
+  const setup = applyPluginWithConfig({ lazyTools: false })
+  try {
+    assert.deepEqual(
+      [...setup.tools.keys()].sort(),
+      [
+        'wiki_can_edit',
+        'wiki_download_media',
+        'wiki_get_conventions',
+        'wiki_list_media',
+        'wiki_list_pages',
+        'wiki_page_history',
+        'wiki_permissions',
+        'wiki_read_page',
+        'wiki_recent_changes',
+        'wiki_search',
+        'wiki_status',
+      ],
+    )
+    assert.equal(setup.tools.has('wiki_write_page'), false, '写工具必须等 ACL 探测通过后才注册')
+    assert.equal(setup.tools.has('wiki_delete_page'), false)
+    assert.equal(setup.tools.has('wiki_upload_media'), false, '上传工具必须等上传权限探测通过后才注册')
+    assert.equal(setup.skills.length, 1)
+    assert.equal(setup.skills[0].name, 'dokuwiki')
+    assert.equal(setup.skills[0].invocation.modelInvocable, true)
+    assert.match(setup.skills[0].content, /wiki_write_page/)
+    assert.equal(setup.providers.length, 0)
+  } finally {
+    setup.cleanup()
+  }
+})
+
+test('lazy mode: a skill load unlocks the wiki tools for that session only', async () => {
+  const { startMockWiki } = await import('./mock-dokuwiki.mjs')
+  const wiki = await startMockWiki({ remoteuser: ['alice'] })
+  const setup = await setupPlugin({ lazyTools: true })
+  try {
+    await setup.configure({ baseUrls: [wiki.url], username: 'writer', enableWrite: true })
+    await setup.setPassword('writerpass')
+    await setup.refreshCapabilities()
+    assert.deepEqual([...setup.tools.keys()], ['wiki_status'], 'baseline is one global tool')
+
+    assert.equal(setup.providers.length, 1)
+    const provider = setup.providers[0]
+    const candidates = await provider.list({})
+    assert.equal(candidates.length, 1)
+    assert.equal(candidates[0].name, 'dokuwiki')
+    assert.equal(candidates[0].provider, 'dsh-dokuwiki')
+    assert.equal(candidates[0].source, 'runtime')
+
+    const agentA = createMockAgent('agent-a')
+    const agentB = createMockAgent('agent-b')
+    const skill = await provider.get(candidates[0], { scope: agentA, cwd: '/tmp' })
+    assert.equal(skill.name, 'dokuwiki')
+    assert.equal(skill.provider, 'dsh-dokuwiki')
+    assert.match(skill.content, /wiki_search/)
+    assert.deepEqual([...agentA.tools.keys()].sort(), LAZY_SCOPED_TOOLS)
+    assert.equal(agentB.tools.size, 0, 'other sessions stay locked')
+    assert.equal(setup.tools.size, 1, 'the global registry is unchanged')
+
+    // Loading the skill in the second session unlocks only that session.
+    await provider.get(candidates[0], { scope: agentB, cwd: '/tmp' })
+    assert.deepEqual([...agentB.tools.keys()].sort(), LAZY_SCOPED_TOOLS)
+
+    // Disposing an Agent removes its scoped tools again.
+    setup.emit('agent/disposed', { agent: agentA })
+    assert.equal(agentA.tools.size, 0)
+    assert.deepEqual([...agentB.tools.keys()].sort(), LAZY_SCOPED_TOOLS)
+
+    // A resumed session whose previous header listed wiki tools keeps them.
+    const resumed = createMockAgent('agent-resumed', {
+      tools: [{ name: 'wiki_status' }, { name: 'wiki_read_page' }],
+    })
+    setup.emit('agent/created', { agent: resumed, source: 'resume' })
+    assert.ok(resumed.tools.has('wiki_search'))
+    assert.ok(resumed.tools.has('wiki_write_page'))
+
+    // A fresh session is not unlocked by the creation event.
+    const fresh = createMockAgent('agent-fresh')
+    setup.emit('agent/created', { agent: fresh, source: 'startup' })
+    assert.equal(fresh.tools.size, 0)
+
+    // No session scope means no unlock and no error.
+    const unscoped = await provider.get(candidates[0], {})
+    assert.match(unscoped.content, /wiki_search/)
+    assert.equal(agentB.tools.size, LAZY_SCOPED_TOOLS.length)
+  } finally {
+    setup.cleanup()
+    await wiki.close()
+  }
 })
 
 test('tool schemas stay within the DSH JSON-schema subset', () => {
@@ -259,11 +442,15 @@ test('tool schemas stay within the DSH JSON-schema subset', () => {
       walk(value, toolName, [...pathParts, key])
     }
   }
-  const mock = createMockContext()
-  plugin.apply(mock.ctx)
-  for (const [toolName, definition] of mock.tools) {
-    walk(definition.parameters, toolName, ['parameters'])
-    walk(definition.output.schema, toolName, ['output.schema'])
+  // Eager mode registers every read tool up front, so this covers all schemas.
+  const setup = applyPluginWithConfig({ lazyTools: false })
+  try {
+    for (const [toolName, definition] of setup.tools) {
+      walk(definition.parameters, toolName, ['parameters'])
+      walk(definition.output.schema, toolName, ['output.schema'])
+    }
+  } finally {
+    setup.cleanup()
   }
 })
 
@@ -296,6 +483,8 @@ test('config API stores non-secret settings and never returns the password', asy
     assert.equal(initial.status, 200)
     assert.equal(initial.json.credential.configured, false)
     assert.deepEqual(initial.json.config.baseUrls, [])
+    // This profile was applied in eager mode on purpose.
+    assert.equal(initial.json.config.lazyTools, false)
 
     await setup.setPassword('super-secret-password')
     const afterPassword = await callApi(setup.routes, 'GET', '/config')
@@ -317,6 +506,12 @@ test('config API stores non-secret settings and never returns the password', asy
     assert.equal(withConventions.config.conventionsPage, 'wiki:writing_rules')
     const cleared = await setup.configure({ conventionsPage: '' })
     assert.equal(cleared.config.conventionsPage, '')
+
+    // The lazy disclosure switch round-trips through the config API.
+    const lazyOn = await setup.configure({ lazyTools: true })
+    assert.equal(lazyOn.config.lazyTools, true)
+    const lazyOff = await setup.configure({ lazyTools: false })
+    assert.equal(lazyOff.config.lazyTools, false)
 
     const clear = await callApi(setup.routes, 'POST', '/credential', { clear: true })
     assert.equal(clear.json.credential.configured, false)

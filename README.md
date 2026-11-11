@@ -46,6 +46,10 @@ the plugin config.
   bypasses it) and the result says whether it came from cache.
 - **Built-in skill** — a `dokuwiki` skill ships with the plugin and carries the
   operational rules, so the model knows when and how to use the tools.
+- **Session-scoped lazy tools** — only `wiki_status` is offered up front. The
+  remaining tools are registered for a conversation when that conversation loads
+  the `dokuwiki` skill, in that Agent's own scope; other sessions never see them.
+  Switch it off to always expose the full tool set.
 - **Optional per-wiki writing conventions** — a wiki can record its own rules
   (where new pages go, how they are named, which template to copy, required
   structure, summary style) in a normal wiki page. Set that page id on the
@@ -76,8 +80,12 @@ the plugin config.
 | `wiki_delete_page` | Delete a page (explicit); `summary` required; verified by readback |
 | `wiki_upload_media` | Upload a workspace file into a namespace; verified by downloading it back |
 
-Write, delete and upload tools are registered only after the capability probe
-confirms the account may use them; the wiki ACL still decides every call.
+In the default **lazy** mode only `wiki_status` is offered up front; loading the
+`dokuwiki` skill unlocks the rest for that conversation (the tools are
+registered in the Agent's own scope, so other sessions are unaffected). With
+`lazyTools: false` every read tool is exposed from the start. Write, delete and
+upload tools are registered only after the capability probe confirms the
+account may use them; the wiki ACL still decides every call.
 
 ## Install
 
@@ -108,6 +116,11 @@ plugin) and fill in:
 5. **Writing conventions page** (optional) — a DokuWiki page id that records this
    wiki's own page-writing rules; leave it empty to keep the feature off. See
    below.
+6. **Session-scoped lazy tools** (on by default) — only `wiki_status` is
+   offered up front; the rest of the tool set is registered for a conversation
+   when that conversation loads the `dokuwiki` skill. Turn it off to always
+   expose the full tool set. This switch takes effect after DSH restarts or the
+   plugin is re-enabled.
 
 Non-secret settings are stored in `$DSH_HOME/dokuwiki.config.json`.
 

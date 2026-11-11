@@ -478,5 +478,8 @@ test('config normalization validates timeouts', () => {
   assert.deepEqual(config.baseUrls, ['http://host:8080'])
   assert.equal(config.username, 'u')
   assert.equal(config.enableWrite, true)
+  // 0.6.0: session-scoped lazy tool disclosure is on unless switched off.
+  assert.equal(config.lazyTools, true)
+  assert.equal(normalizeConfig({ lazyTools: false }).lazyTools, false)
   assert.throws(() => normalizeConfig({ timeoutMs: 10 }), /timeoutMs/)
 })
