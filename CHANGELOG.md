@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.2 — 2026-11-11
+
+### Fixed
+
+- `wiki_recent_changes` no longer labels newly created pages as media files.
+  Classification used to depend on the entry having a diff link, which a fresh
+  page may lack; it now looks at the title anchor target (media entries link to
+  the media manager, page entries to `?id=<page>`).
+
 ## 0.4.1 — 2026-11-11
 
 ### Fixed

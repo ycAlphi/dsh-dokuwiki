@@ -140,6 +140,39 @@ test('web fallback: account outside remoteuser logs in and reads', async () => {
   })
 })
 
+test('recent changes: page entries without a diff link are still pages', async () => {
+  await withWiki(
+    {
+      recent: [
+        {
+          date: '2026/11/11 12:03',
+          pageid: 'user:writer:new_page',
+          user: 'writer',
+          summary: '新建页面',
+          type: 'page',
+          omitDiff: true,
+        },
+        { date: '2026/11/11 11:00', pageid: 'notes:2026-07:2026-07-02', user: 'writer', summary: '编辑', type: 'page' },
+        { date: '2026/11/11 10:00', pageid: 'wiki:plot.png', user: 'writer', summary: '创建', type: 'mediafile' },
+      ],
+    },
+    async (wiki) => {
+      const client = new DokuWikiClient({ baseUrls: [wiki.url], username: 'writer', password: 'writerpass' })
+      const recent = await client.recentChanges({ limit: 10 })
+      // A newly created page may render without its diff link; classifying by
+      // the title anchor's media-manager target keeps it a page.
+      assert.deepEqual(
+        recent.items.map((entry) => [entry.pageid, entry.type]),
+        [
+          ['user:writer:new_page', 'page'],
+          ['notes:2026-07:2026-07-02', 'page'],
+          ['wiki:plot.png', 'mediafile'],
+        ],
+      )
+    },
+  )
+})
+
 test('login failure: one attempt only and a lockout warning', async () => {
   await withWiki({}, async (wiki) => {
     const client = new DokuWikiClient({

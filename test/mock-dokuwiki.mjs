@@ -139,7 +139,9 @@ function renderRecentChanges(recent) {
         : `/doku.php?id=${encodeURIComponent(entry.pageid)}`
       const diff = media
         ? '<img src="/lib/images/blank.gif" width="15" height="11" alt="" />'
-        : `<a href="/doku.php?id=${encodeURIComponent(entry.pageid)}&amp;do=diff" class="diff_link"><img src="/lib/images/diff.png" width="15" height="11" alt="diff" /></a>`
+        : entry.omitDiff
+          ? '<img src="/lib/images/blank.gif" width="15" height="11" alt="" />'
+          : `<a href="/doku.php?id=${encodeURIComponent(entry.pageid)}&amp;do=diff" class="diff_link"><img src="/lib/images/diff.png" width="15" height="11" alt="diff" /></a>`
       const summary = entry.summary ? ` — ${escapeHtml(entry.summary)}` : ''
       return `<li class=""><div class="li"><img class="icon" src="/lib/images/fileicons/file.png" alt="${escapeHtml(entry.pageid)}" /> <span class="date">${escapeHtml(entry.date)}</span> ${diff} <a href="${href}" class="wikilink1">${escapeHtml(entry.pageid)}</a> <span class="sum">${summary}</span> <span class="user"><bdi>${escapeHtml(entry.user)}</bdi></span></div></li>`
     })
